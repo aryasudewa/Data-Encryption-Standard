@@ -6,9 +6,13 @@ import json
 import random
 import string
 import sys
+import time
 
 SERVER_IP = '127.0.0.1'
 PORT = 65432
+
+pub_key, priv_key = SimpleRSA.generate_keypair()
+print(f"My Public Key: {pub_key}")
 
 def generate_session_key():
     chars = string.ascii_letters + string.digits
@@ -17,7 +21,7 @@ def generate_session_key():
 def receive_messages(sock, session_key):
     while True:
         try:
-            data = sock.recv(1024)
+            data = sock.recv(4096)
             if not data:
                 print("\nDisconnected from server.")
                 break
@@ -41,15 +45,17 @@ def start_client():
         s.connect((SERVER_IP, PORT))
         print("Connected.")
 
-        pub_key_data = s.recv(1024)
-        public_key = tuple(json.loads(pub_key_data.decode('utf-8')))
+        data = s.recv(4096)
+        server_pub_key = tuple(json.loads(data.decode('utf-8')))
         print(f"Received Server Public Key.")
 
+        s.sendall(json.dumps(pub_key).encode('utf-8'))
         key_str = generate_session_key()
         KEY_BYTES = key_str.encode('utf-8')
         print(f"Generated Session Key: {KEY_BYTES}")
 
-        encrypted_key_int = SimpleRSA.encrypt_key(public_key, KEY_BYTES)
+        encrypted_key_int = SimpleRSA.encrypt_key(server_pub_key, KEY_BYTES)
+        time.sleep(0.1)
         s.sendall(str(encrypted_key_int).encode('utf-8'))
 
         ack = s.recv(1024) 
@@ -68,7 +74,10 @@ def start_client():
                 
             pesan_bytes = pesan_string.encode('utf-8')
 
-            data_terenkripsi = DES.des_encrypt(pesan_bytes, KEY_BYTES)
+            signature_int = SimpleRSA.sign(priv_key, pesan_bytes)
+            packet = pesan_bytes + b"||SIGN||" + str(signature_int).encode('utf-8')
+
+            data_terenkripsi = DES.des_encrypt(packet, KEY_BYTES)
 
             s.sendall(data_terenkripsi)
 
